@@ -5,6 +5,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.google.firebase.database.DataSnapshot
@@ -14,28 +15,28 @@ import com.google.firebase.database.ValueEventListener
 import com.google.firebase.database.getValue
 
 @Composable
-fun AddPhraseScreen(database: DatabaseReference) {
-    var phrase by remember { mutableStateOf("") }
+fun AddVocabularyScreen(database: DatabaseReference, onNavigateBack: () -> Unit) {
+    var word by remember { mutableStateOf("") }
     var translation by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
-    var phrases by remember { mutableStateOf(emptyList<Pair<String, Map<String, String>>>()) }
+    var vocabularyList by remember { mutableStateOf(emptyList<Pair<String, Map<String, String>>>()) }
 
-    // Load existing phrases from Firebase
+    // Load existing vocabulary from Firebase
     LaunchedEffect(Unit) {
-        database.child("phrases").addValueEventListener(object : ValueEventListener {
+        database.child("vocabulary").addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val loadedPhrases = mutableListOf<Pair<String, Map<String, String>>>()
+                val loadedVocabulary = mutableListOf<Pair<String, Map<String, String>>>()
                 for (child in snapshot.children) {
-                    val phraseData = child.getValue<Map<String, String>>()
-                    if (phraseData != null) {
-                        loadedPhrases.add((child.key!! to phraseData) as Pair<String, Map<String, String>>)
+                    val vocabData = child.getValue<Map<String, String>>()
+                    if (vocabData != null) {
+                        loadedVocabulary.add((child.key!! to vocabData) as Pair<String, Map<String, String>>)
                     }
                 }
-                phrases = loadedPhrases
+                vocabularyList = loadedVocabulary
             }
 
             override fun onCancelled(error: DatabaseError) {
-                message = "Failed to load phrases: ${error.message}"
+                message = "Failed to load vocabulary: ${error.message}"
             }
         })
     }
@@ -43,16 +44,18 @@ fun AddPhraseScreen(database: DatabaseReference) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp)
+            .padding(16.dp),
+        verticalArrangement = Arrangement.Top,
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(text = "Add a New Phrase", style = MaterialTheme.typography.headlineMedium)
+        Text(text = "Add Vocabulary", style = MaterialTheme.typography.headlineMedium)
 
         Spacer(modifier = Modifier.height(16.dp))
 
         OutlinedTextField(
-            value = phrase,
-            onValueChange = { phrase = it },
-            label = { Text("Phrase") },
+            value = word,
+            onValueChange = { word = it },
+            label = { Text("Word") },
             modifier = Modifier.fillMaxWidth()
         )
 
@@ -69,16 +72,16 @@ fun AddPhraseScreen(database: DatabaseReference) {
 
         Button(
             onClick = {
-                if (phrase.isNotEmpty() && translation.isNotEmpty()) {
-                    val phraseData = mapOf("phrase" to phrase, "translation" to translation)
-                    database.child("phrases").push().setValue(phraseData)
+                if (word.isNotEmpty() && translation.isNotEmpty()) {
+                    val vocabularyData = mapOf("word" to word, "translation" to translation)
+                    database.child("vocabulary").push().setValue(vocabularyData)
                         .addOnSuccessListener {
-                            message = "Phrase added successfully!"
-                            phrase = ""
+                            message = "Vocabulary added successfully!"
+                            word = ""
                             translation = ""
                         }
                         .addOnFailureListener {
-                            message = "Failed to add phrase: ${it.message}"
+                            message = "Failed to add vocabulary: ${it.message}"
                         }
                 } else {
                     message = "Please fill both fields."
@@ -86,7 +89,7 @@ fun AddPhraseScreen(database: DatabaseReference) {
             },
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Add Phrase")
+            Text("Add Vocabulary")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -95,41 +98,49 @@ fun AddPhraseScreen(database: DatabaseReference) {
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        Text(text = "Existing Phrases", style = MaterialTheme.typography.headlineSmall)
+        Text(text = "Existing Vocabulary", style = MaterialTheme.typography.headlineSmall)
 
         Spacer(modifier = Modifier.height(8.dp))
 
         LazyColumn {
-            items(phrases) { (id, phraseData) ->
-                PhraseItem(
+            items(vocabularyList) { (id, vocabData) ->
+                VocabularyItem(
                     id = id,
-                    phrase = phraseData["phrase"] ?: "",
-                    translation = phraseData["translation"] ?: "",
+                    word = vocabData["word"] ?: "",
+                    translation = vocabData["translation"] ?: "",
                     database = database
                 )
                 Spacer(modifier = Modifier.height(8.dp))
             }
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
+        Button(
+            onClick = onNavigateBack,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text("Back to Admin")
+        }
     }
 }
 
 @Composable
-fun PhraseItem(id: String, phrase: String, translation: String, database: DatabaseReference) {
+fun VocabularyItem(id: String, word: String, translation: String, database: DatabaseReference) {
     var isEditing by remember { mutableStateOf(false) }
-    var editPhrase by remember { mutableStateOf(phrase) }
+    var editWord by remember { mutableStateOf(word) }
     var editTranslation by remember { mutableStateOf(translation) }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .padding(8.dp)
-            .then(if (isEditing) Modifier else Modifier)
     ) {
         if (isEditing) {
             OutlinedTextField(
-                value = editPhrase,
-                onValueChange = { editPhrase = it },
-                label = { Text("Edit Phrase") },
+                value = editWord,
+                onValueChange = { editWord = it },
+                label = { Text("Edit Word") },
                 modifier = Modifier.fillMaxWidth()
             )
 
@@ -146,8 +157,8 @@ fun PhraseItem(id: String, phrase: String, translation: String, database: Databa
 
             Row {
                 Button(onClick = {
-                    val updatedData = mapOf("phrase" to editPhrase, "translation" to editTranslation)
-                    database.child("phrases").child(id).setValue(updatedData)
+                    val updatedData = mapOf("word" to editWord, "translation" to editTranslation)
+                    database.child("vocabulary").child(id).setValue(updatedData)
                     isEditing = false
                 }) {
                     Text("Save")
@@ -158,7 +169,7 @@ fun PhraseItem(id: String, phrase: String, translation: String, database: Databa
                 }
             }
         } else {
-            Text(text = "Phrase: $phrase", style = MaterialTheme.typography.bodyLarge)
+            Text(text = "Word: $word", style = MaterialTheme.typography.bodyLarge)
             Text(text = "Translation: $translation", style = MaterialTheme.typography.bodyMedium)
 
             Row(modifier = Modifier.padding(top = 8.dp)) {
@@ -167,7 +178,7 @@ fun PhraseItem(id: String, phrase: String, translation: String, database: Databa
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Button(onClick = {
-                    database.child("phrases").child(id).removeValue()
+                    database.child("vocabulary").child(id).removeValue()
                 }) {
                     Text("Delete")
                 }

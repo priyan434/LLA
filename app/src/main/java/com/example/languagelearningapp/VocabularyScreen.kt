@@ -1,11 +1,14 @@
 package com.example.languagelearningapp
 
 import android.speech.tts.TextToSpeech
+import android.util.Log
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.VolumeUp
@@ -22,24 +25,26 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.google.firebase.database.DatabaseReference
+import kotlin.math.ceil
 
 @Composable
 fun VocabularyScreen(database: DatabaseReference, textToSpeech: TextToSpeech) {
     var vocabularyList by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
-    var page by remember { mutableStateOf(0) }
-    val pageSize = 5
+    var currentPage by remember { mutableStateOf(1) }
+    val itemsPerPage = 5
 
-    // Fetch vocabulary from Realtime Database
+    // Fetch vocabulary data from Firebase
     LaunchedEffect(Unit) {
         database.child("vocabulary").get()
             .addOnSuccessListener { dataSnapshot ->
-                val vocabulary = dataSnapshot.children.map { snapshot ->
+                val vocabList = mutableListOf<Pair<String, String>>()
+                dataSnapshot.children.forEach { snapshot ->
                     val word = snapshot.child("word").getValue(String::class.java) ?: ""
                     val translation = snapshot.child("translation").getValue(String::class.java) ?: ""
-                    word to translation
+                    vocabList.add(word to translation)
                 }
-                vocabularyList = vocabulary
+                vocabularyList = vocabList
                 loading = false
             }
             .addOnFailureListener {
@@ -47,9 +52,10 @@ fun VocabularyScreen(database: DatabaseReference, textToSpeech: TextToSpeech) {
             }
     }
 
-    // Pagination logic
-    val paginatedList = vocabularyList.chunked(pageSize)
-    val currentPage = paginatedList.getOrNull(page) ?: emptyList()
+    val totalPages = if (vocabularyList.isNotEmpty()) ceil(vocabularyList.size / itemsPerPage.toDouble()).toInt() else 1
+    val startIndex = (currentPage - 1) * itemsPerPage
+    val endIndex = (startIndex + itemsPerPage).coerceAtMost(vocabularyList.size)
+    val currentVocabulary = vocabularyList.subList(startIndex, endIndex)
 
     Column(
         modifier = Modifier
@@ -68,21 +74,30 @@ fun VocabularyScreen(database: DatabaseReference, textToSpeech: TextToSpeech) {
 
         if (loading) {
             CircularProgressIndicator()
-        } else if (currentPage.isNotEmpty()) {
-            VocabularyList(textToSpeech, currentPage)
+        } else if (currentVocabulary.isNotEmpty()) {
+            VocabularyList(textToSpeech, currentVocabulary)
+
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Pagination controls
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
             ) {
-                if (page > 0) {
-                    Button(onClick = { page-- }) {
-                        Text("Previous")
-                    }
+                Button(
+                    onClick = { if (currentPage > 1) currentPage-- },
+                    enabled = currentPage > 1
+                ) {
+                    Text("Previous")
                 }
-                if (page < paginatedList.size - 1) {
-                    Button(onClick = { page++ }) {
-                        Text("Next")
-                    }
+
+                Text("Page $currentPage of $totalPages")
+
+                Button(
+                    onClick = { if (currentPage < totalPages) currentPage++ },
+                    enabled = currentPage < totalPages
+                ) {
+                    Text("Next")
                 }
             }
         } else {
@@ -93,8 +108,9 @@ fun VocabularyScreen(database: DatabaseReference, textToSpeech: TextToSpeech) {
 
 @Composable
 fun VocabularyList(textToSpeech: TextToSpeech, vocabulary: List<Pair<String, String>>) {
-    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        vocabulary.forEach { (word, translation) ->
+    LazyColumn(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        items(vocabulary) { vocabularyItem -> // vocabularyItem is a Pair<String, String>
+            val (word, translation) = vocabularyItem // Destructure Pair
             VocabularyCardItem(word = word, translation = translation, textToSpeech = textToSpeech)
         }
     }
@@ -108,7 +124,7 @@ fun VocabularyCardItem(word: String, translation: String, textToSpeech: TextToSp
         modifier = Modifier
             .fillMaxWidth()
             .clickable {
-                // Speak the French word using Text-to-Speech
+                // Speak the word using Text-to-Speech
                 textToSpeech.speak(word, TextToSpeech.QUEUE_FLUSH, null, null)
             },
         shape = RoundedCornerShape(8.dp),
@@ -134,7 +150,7 @@ fun VocabularyCardItem(word: String, translation: String, textToSpeech: TextToSp
                 )
             }
             Icon(
-                imageVector = Icons.AutoMirrored.Filled.VolumeUp, // Use AutoMirrored here
+                imageVector = Icons.Default.VolumeUp,
                 contentDescription = "Play pronunciation",
                 modifier = Modifier.size(24.dp),
                 tint = MaterialTheme.colorScheme.primary
@@ -143,9 +159,3 @@ fun VocabularyCardItem(word: String, translation: String, textToSpeech: TextToSp
     }
 }
 
-@Preview(showBackground = true)
-@Composable
-fun PreviewVocabularyScreen() {
-    // Preview doesn't need real TextToSpeech instance, use a mock if needed
-    // VocabularyScreen(TextToSpeech(context))
-}
